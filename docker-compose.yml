@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - POSTECH_API_KEY=${POSTECH_API_KEY}
+      - POSTECH_BASE_URL=${POSTECH_BASE_URL:-https://genai.postech.ac.kr/agent/api}
+      - PROXY_HOST=${PROXY_HOST:-http://localhost:8080}
+    volumes:
+      - ./tmp:/app/tmp
+    restart: unless-stopped
+
