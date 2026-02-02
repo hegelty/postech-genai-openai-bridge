@@ -8,7 +8,7 @@ from typing import Optional
 import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 load_dotenv()
@@ -147,6 +147,49 @@ async def save_uploaded_file(file: UploadFile) -> FileInfo:
     )
 
 
+def generate_stream_response(reply: str, model: str, completion_id: str):
+    """Generate SSE stream chunks for streaming response."""
+    created = int(time.time())
+
+    # Send the content in a single chunk (since POSTECH API doesn't support streaming)
+    chunk = {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {
+                    "role": "assistant",
+                    "content": reply,
+                },
+                "finish_reason": None,
+            }
+        ],
+    }
+    yield f"data: {json.dumps(chunk)}\n\n"
+
+    # Send finish chunk
+    finish_chunk = {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+    yield f"data: {json.dumps(finish_chunk)}\n\n"
+
+    # Send done signal
+    yield "data: [DONE]\n\n"
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(
     request: Request,
@@ -157,6 +200,7 @@ async def chat_completions(
 ):
     # Detect content type and parse accordingly
     content_type = request.headers.get("content-type", "")
+    is_stream = False
 
     if "multipart/form-data" in content_type:
         # Form data request
@@ -167,11 +211,13 @@ async def chat_completions(
         except (json.JSONDecodeError, TypeError) as e:
             raise HTTPException(status_code=400, detail=f"Invalid messages format: {e}")
         model = model or DEFAULT_MODEL
+        is_stream = stream and stream.lower() == "true"
     else:
         # JSON request
         body = await request.json()
         model = body.get("model", DEFAULT_MODEL)
         parsed_messages = [Message(**m) for m in body.get("messages", [])]
+        is_stream = body.get("stream", False)
 
     # Validate model
     if model not in MODEL_ENDPOINTS:
@@ -195,9 +241,22 @@ async def chat_completions(
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"POSTECH API error: {str(e)}")
 
-    # Build OpenAI-compatible response
+    completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+
+    # Return streaming response if requested
+    if is_stream:
+        return StreamingResponse(
+            generate_stream_response(reply, model, completion_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
+    # Build OpenAI-compatible response (non-streaming)
     return {
-        "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
+        "id": completion_id,
         "object": "chat.completion",
         "created": int(time.time()),
         "model": model,
