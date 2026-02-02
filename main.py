@@ -147,47 +147,62 @@ async def save_uploaded_file(file: UploadFile) -> FileInfo:
     )
 
 
-def generate_stream_response(reply: str, model: str, completion_id: str):
+async def generate_stream_response(reply: str, model: str, completion_id: str):
     """Generate SSE stream chunks for streaming response."""
     created = int(time.time())
 
-    # Send the content in a single chunk (since POSTECH API doesn't support streaming)
-    chunk = {
-        "id": completion_id,
-        "object": "chat.completion.chunk",
-        "created": created,
-        "model": model,
-        "choices": [
-            {
-                "index": 0,
-                "delta": {
-                    "role": "assistant",
-                    "content": reply,
-                },
-                "finish_reason": None,
-            }
-        ],
-    }
-    yield f"data: {json.dumps(chunk)}\n\n"
+    try:
+        # First chunk with role
+        role_chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant"},
+                    "finish_reason": None,
+                }
+            ],
+        }
+        yield f"data: {json.dumps(role_chunk)}\n\n"
 
-    # Send finish chunk
-    finish_chunk = {
-        "id": completion_id,
-        "object": "chat.completion.chunk",
-        "created": created,
-        "model": model,
-        "choices": [
-            {
-                "index": 0,
-                "delta": {},
-                "finish_reason": "stop",
-            }
-        ],
-    }
-    yield f"data: {json.dumps(finish_chunk)}\n\n"
+        # Content chunk
+        content_chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"content": reply},
+                    "finish_reason": None,
+                }
+            ],
+        }
+        yield f"data: {json.dumps(content_chunk)}\n\n"
 
-    # Send done signal
-    yield "data: [DONE]\n\n"
+        # Finish chunk
+        finish_chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+        yield f"data: {json.dumps(finish_chunk)}\n\n"
+
+    finally:
+        # Always send done signal
+        yield "data: [DONE]\n\n"
 
 
 @app.post("/v1/chat/completions")
