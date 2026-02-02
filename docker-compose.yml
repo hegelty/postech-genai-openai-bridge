@@ -2,11 +2,11 @@ services:
   app:
     build: .
     ports:
-      - "${PORT-8080}:8080"
+      - "8080:8080"  # 호스트포트:컨테이너포트 (호스트포트는 필요시 변경)
     environment:
-      - POSTECH_API_KEY=${POSTECH_API_KEY}
-      - POSTECH_BASE_URL=${POSTECH_BASE_URL-https://genai.postech.ac.kr/agent/api}
-      - PROXY_HOST=${PROXY_HOST}
+      POSTECH_API_KEY: ${POSTECH_API_KEY}
+      POSTECH_BASE_URL: ${POSTECH_BASE_URL}
+      PROXY_HOST: ${PROXY_HOST}
     volumes:
       - ./tmp:/app/tmp
     restart: unless-stopped
