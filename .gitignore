@@ -37,7 +37,3 @@ ENV/
 # Temp files
 tmp/
 *.tmp
-
-# uv
-.python-version
-uv.lock
